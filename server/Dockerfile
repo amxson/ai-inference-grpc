@@ -11,10 +11,13 @@ COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all project files
-COPY . .
+COPY server/ server/
+COPY ai_inference_pb2.py ai_inference_pb2_grpc.py ./
+RUN useradd --create-home appuser
+USER appuser
 
 # Expose gRPC port
 EXPOSE 50051
 
 # Run server
-CMD ["python", "server/server.py"]
+CMD ["python", "-m", "server.server"]

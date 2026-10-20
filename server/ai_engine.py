@@ -1,5 +1,7 @@
 import os
 import time
+import math
+import logging
 
 try:
     from google import genai
@@ -23,14 +25,16 @@ def call_gemini(prompt: str) -> str:
         return ""
 
     try:
-        client = genai.Client()
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt
+        client = genai.Client(http_options={"timeout": 10_000})
+        with client:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL, contents=prompt
+            )
+            return response.text or ""
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Gemini unavailable; using the local fallback."
         )
-        return response.text or ""
-    except Exception as error:
-        print(f"[Gemini fallback] Gemini call failed: {error}")
         return ""
 
 
@@ -53,7 +57,13 @@ POSITIVE,0.95
         try:
             cleaned = gemini_result.strip().replace("\n", "")
             label, confidence = cleaned.split(",", 1)
-            return label.strip().upper(), float(confidence.strip())
+            label, confidence = label.strip().upper(), float(confidence.strip())
+            if (
+                label in {"POSITIVE", "NEGATIVE", "NEUTRAL"}
+                and math.isfinite(confidence)
+                and 0 <= confidence <= 1
+            ):
+                return label, confidence
         except Exception:
             pass
 

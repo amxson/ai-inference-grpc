@@ -1,1 +1,1 @@
-ni server\__init__.py
+"""gRPC service and inference adapters."""

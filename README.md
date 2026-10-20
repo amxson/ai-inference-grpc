@@ -1,291 +1,69 @@
-# AI Inference Microservice using gRPC
+# AI Inference over gRPC
 
-This project implements an **AI Inference Microservice** using **gRPC**, **Protocol Buffers**, **Python**, **Gemini API**, **Docker**, **Docker Compose**, and **Nginx Layer 7 Load Balancing**.
+A Python service demonstrating the four gRPC call patterns against one inference adapter. Gemini is optional: without a key, deterministic local responses let you run the client and tests without network access.
 
-The system demonstrates all four gRPC communication models:
+| RPC | Pattern | Behavior |
+| --- | --- | --- |
+| `AnalyzeSentiment` | Unary | Label and confidence for one text |
+| `GenerateText` | Server streaming | An answer emitted as word chunks |
+| `SummarizeBatch` | Client streaming | Bounded text chunks combined into one summary |
+| `Chat` | Bidirectional streaming | One response per incoming message |
 
-1. Unary RPC - Sentiment Analysis
-2. Server Streaming RPC - Real-time text generation
-3. Client Streaming RPC - Batch summarization
-4. Bidirectional Streaming RPC - Live chat assistant
+The provider adapter currently generates a complete response before emitting word chunks. This demonstrates gRPC streaming, not native Gemini token streaming. Chat handles each message independently; it does not retain conversation memory.
 
----
+## Run locally
 
-## Project Idea
+Use Python 3.11 or newer, from the repository root:
 
-The goal of this project is to build a backend AI microservice that receives requests from a client, sends the input to an AI backend, and returns the AI result using gRPC.
+```sh
+python -m venv .venv
+# Linux/macOS: source .venv/bin/activate
+# PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python -m server.server
+```
 
-The AI backend is implemented using **Gemini API**. If Gemini is not configured, the system can fall back to mock responses for local testing.
+In another terminal, with the same environment active:
 
----
-
-## Architecture
-
-```text
-Client CLI
-   |
-   v
-gRPC Server
-   |
-   v
-Gemini API
-   |
-   v
-gRPC Response
-
-For containerized deployment, the intended architecture is:
-
-Client CLI
-   |
-   v
-Nginx gRPC Load Balancer
-   |
-   +--> AI Server 1
-   +--> AI Server 2
-   +--> AI Server 3
-          |
-          v
-       Gemini API
-
-The client connects to the gRPC service. In the Docker deployment design, the client connects to the Nginx load balancer, and Nginx forwards requests to one of the backend gRPC servers.
-
-Project Structure
-ai-inference-grpc/
-├── protos/
-│   └── ai_inference.proto
-├── server/
-│   ├── server.py
-│   ├── ai_engine.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── client/
-│   ├── client.py
-│   └── requirements.txt
-├── nginx/
-│   └── nginx.conf
-├── screenshots/
-├── docker-compose.yml
-├── Makefile
-├── README.md
-├── ai_inference_pb2.py
-└── ai_inference_pb2_grpc.py
-gRPC API
-
-The service contract is defined in:
-
-protos/ai_inference.proto
-
-The .proto file defines one service called AIInference with four RPC methods:
-
-RPC Method	Type	Purpose
-AnalyzeSentiment	Unary RPC	Sends one text and receives a sentiment label plus confidence score
-GenerateText	Server Streaming RPC	Sends one prompt and receives generated tokens one by one
-SummarizeBatch	Client Streaming RPC	Sends multiple text chunks and receives one final summary
-Chat	Bidirectional Streaming RPC	Sends and receives chat messages through one open stream
-Why gRPC?
-
-gRPC is useful for this project because:
-
-It uses Protocol Buffers for a strict API contract.
-It supports all four RPC communication models.
-It is efficient for microservice communication.
-It supports streaming, which is important for AI-generated responses.
-It runs on HTTP/2, making it suitable for low-latency systems.
-Protocol Buffers
-
-Protocol Buffers are used to define the request and response messages.
-
-After compiling the .proto file, these generated files are created:
-
-ai_inference_pb2.py
-ai_inference_pb2_grpc.py
-
-ai_inference_pb2.py contains the generated message classes.
-
-ai_inference_pb2_grpc.py contains the generated gRPC client and server classes, such as the stub and servicer.
-
-These files are generated automatically and should not be edited manually.
-
-AI Backend
-
-The AI backend logic is located in:
-
-server/ai_engine.py
-
-This file is responsible for calling Gemini API and handling AI-related tasks.
-
-It includes functions for:
-
-Sentiment analysis
-Text generation
-Batch summarization
-Chat response
-
-The gRPC networking logic is kept separate in:
-
-server/server.py
-
-This separation makes the project easier to maintain because the AI provider can be changed later without changing the gRPC contract.
-
-For example, Gemini could later be replaced with Groq, Ollama, or another AI backend.
-
-Gemini API Setup
-
-This project uses Gemini API through the google-genai package.
-
-Install dependencies:
-
-pip install -r server/requirements.txt
-
-Set your Gemini API key as an environment variable.
-
-Windows PowerShell
-$env:GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-macOS/Linux
-export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-
-Then start the server from the same terminal where the environment variable is set:
-
-python server/server.py
-
-Important:
-
-Do not put your Gemini API key inside the source code, README, screenshots, or GitHub repository.
-
-Local Setup
-
-Install dependencies:
-
-pip install grpcio grpcio-tools protobuf google-genai
-
-Or install from the server requirements file:
-
-pip install -r server/requirements.txt
-
-Compile protobuf:
-
-python -m grpc_tools.protoc -I protos --python_out=. --grpc_python_out=. protos/ai_inference.proto
-
-Start the server:
-
-python server/server.py
-
-In another terminal, run the client:
-
+```sh
 python client/client.py
-Running with Gemini
+python -m pytest -q
+```
 
-In the server terminal:
+Set `GEMINI_API_KEY` in the server environment to enable Gemini. `GEMINI_MODEL` defaults to `gemini-2.5-flash`; choose a model available to your account. Provider calls have a ten-second HTTP timeout and fall back locally on failure. The client has explicit RPC deadlines. Never commit provider credentials.
 
-$env:GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-python server/server.py
+## Limits and access
 
-In another terminal:
+The listener defaults to `127.0.0.1:50051`. `GRPC_HOST` and `PORT` override the bind address. Each text is limited to 16 KiB of UTF-8; a stream accepts at most 64 items and 64 KiB total. Blank text returns `INVALID_ARGUMENT`, oversized requests return `RESOURCE_EXHAUSTED`, and the service accepts at most 16 concurrent RPCs.
 
-python client/client.py
+Set the same `GRPC_API_TOKEN` on server and client to require bearer metadata on every RPC. A missing or incorrect token returns `UNAUTHENTICATED`. The built-in transport is plaintext for local development: keep it on loopback or a private network. Public hosting requires TLS termination, authentication, and deployment-level rate limits; a bearer token alone does not encrypt traffic.
 
-If Gemini is configured correctly, the responses will come from Gemini instead of the mock fallback.
+## Containers
 
-Docker Setup
-
-Build the Docker image:
-
-docker build -t ai-grpc-server .
-
-Run the full system with three backend servers and Nginx load balancer:
-
+```sh
 docker compose up --build
-
-Run the client through Nginx:
-
 python client/client.py
-
-Stop containers:
-
 docker compose down
+```
 
-Note: Docker configuration is included for the required containerized deployment.
-The gRPC server and client were tested locally using Python and Gemini API. Docker testing depends on having Docker Desktop/WSL running correctly.
+Compose starts three backend processes and an Nginx HTTP/2 proxy. Only the proxy is published, on localhost port 50051. Set provider/token variables in your shell or an untracked `.env` file before starting Compose. Each backend receives the same settings. The application image runs as an unprivileged user and excludes local credentials.
 
-Docker Compose Architecture
+For a standalone image:
 
-The docker-compose.yml file defines:
+```sh
+docker build -f server/Dockerfile -t ai-grpc-server .
+```
 
-ai-server-1
-ai-server-2
-ai-server-3
-nginx
+Docker must be installed and running; unit and RPC tests do not require it.
 
-Each backend server runs the same gRPC AI service.
+## Contract and layout
 
-Nginx acts as a gRPC load balancer and distributes incoming requests across the backend servers.
+`protos/ai_inference.proto` defines the contract. Regenerate the checked-in bindings after changing it:
 
-Nginx Load Balancing
-
-Nginx is configured in:
-
-nginx/nginx.conf
-
-It listens for gRPC traffic using HTTP/2 and forwards requests to the backend servers using:
-
-grpc_pass grpc://ai_backend;
-
-The backend server group contains:
-
-ai-server-1:50051
-ai-server-2:50051
-ai-server-3:50051
-
-This design improves scalability and avoids relying on only one backend server.
-
-Makefile Commands
-make install
+```sh
 make compile
-make server
-make client
-make docker-build
-make compose-up
-make compose-down
-Example Output with Gemini
-Connecting to gRPC server at localhost:50051
+```
 
-=== Unary RPC: Sentiment Analysis ===
-Label: POSITIVE
-Confidence: 0.99
+`server/server.py` handles validation, access, and RPC lifecycles; `server/ai_engine.py` handles inference and fallback behavior. `client/client.py` exercises every call pattern. `tests/test_service.py` starts an ephemeral local server and checks the wire-level responses, authentication, and request limits.
 
-=== Server Streaming RPC: Text Generation ===
-Generated text: gRPC is a modern way for different computer programs to communicate with each other...
-
-=== Client Streaming RPC: Batch Summarization ===
-Sending chunk: gRPC is a modern RPC framework.
-Sending chunk: It uses Protocol Buffers for strict contracts.
-Sending chunk: It supports unary, server streaming, client streaming, and bidirectional streaming.
-Sending chunk: It is useful for scalable microservices and low latency systems.
-Summary: gRPC is a modern RPC framework that utilizes Protocol Buffers for strict contracts. It supports four types of streaming and is ideal for scalable microservices and low-latency systems.
-
-=== Bidirectional Streaming RPC: Live Chat ===
-Client: Hello AI assistant
-Client: What is gRPC?
-Client: Why is streaming useful?
-AI Assistant: Hello!
-AI Assistant: gRPC is an open-source, high-performance Remote Procedure Call framework developed by Google...
-AI Assistant: Streaming allows data to be sent gradually instead of waiting for the full response.
-
-
-The Gemini API key is loaded from an environment variable:
-
-GEMINI_API_KEY
-
-The API key should never be committed to GitHub.
-
-Recommended .gitignore entries:
-
-__pycache__/
-*.pyc
-.venv/
-.env
-Author
-
-Name: Amar Asfaw
-Group: G-10
-Project: AI Inference Microservice using gRPC
+Author: Amar Asfaw.

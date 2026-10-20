@@ -10,6 +10,11 @@ import ai_inference_pb2
 import ai_inference_pb2_grpc
 
 
+def metadata():
+    token = os.getenv("GRPC_API_TOKEN", "")
+    return (("authorization", f"Bearer {token}"),) if token else ()
+
+
 def run_unary(stub):
     print("\n=== Unary RPC: Sentiment Analysis ===")
 
@@ -17,7 +22,7 @@ def run_unary(stub):
         text="I love this product. It is amazing!"
     )
 
-    response = stub.AnalyzeSentiment(request)
+    response = stub.AnalyzeSentiment(request, timeout=30, metadata=metadata())
 
     print(f"Label: {response.label}")
     print(f"Confidence: {response.confidence:.2f}")
@@ -32,7 +37,7 @@ def run_server_streaming(stub):
 
     print("Generated text: ", end="")
 
-    for response in stub.GenerateText(request):
+    for response in stub.GenerateText(request, timeout=30, metadata=metadata()):
         print(response.token, end="", flush=True)
 
     print()
@@ -55,7 +60,7 @@ def generate_chunks():
 def run_client_streaming(stub):
     print("\n=== Client Streaming RPC: Batch Summarization ===")
 
-    response = stub.SummarizeBatch(generate_chunks())
+    response = stub.SummarizeBatch(generate_chunks(), timeout=30, metadata=metadata())
 
     print(f"Summary: {response.summary}")
 
@@ -79,7 +84,7 @@ def chat_messages():
 def run_bidirectional_streaming(stub):
     print("\n=== Bidirectional Streaming RPC: Live Chat ===")
 
-    responses = stub.Chat(chat_messages())
+    responses = stub.Chat(chat_messages(), timeout=60, metadata=metadata())
 
     for response in responses:
         print(f"{response.user}: {response.message}")

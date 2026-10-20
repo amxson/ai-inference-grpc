@@ -1,0 +1,3 @@
+-r server/requirements.txt
+grpcio-tools>=1.80,<2
+pytest>=9.0.3,<10
